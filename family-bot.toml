@@ -1,0 +1,30 @@
+# family-bot.toml
+# Configuration file for the family-bot zoozl server.
+#
+# Start the server with:
+#   python -m zoozl --conf family-bot.toml
+#
+# All WhatsApp credentials and the OpenAI API key can be supplied either
+# directly here or via the matching environment variables:
+#
+#   OPENAI_API_KEY           – OpenAI secret key
+#   WHATSAPP_ACCESS_TOKEN    – Meta Graph API access token
+#   WHATSAPP_PHONE_NUMBER_ID – WhatsApp phone number ID
+#   WHATSAPP_VERIFY_TOKEN    – Webhook verification token (you choose this)
+#   WHATSAPP_APP_SECRET      – App secret for X-Hub-Signature-256 (optional)
+
+# Load the family-bot OpenAI plugin
+extensions = ["family_bot"]
+
+# WhatsApp Cloud API webhook settings
+# The server will listen on this port for incoming WhatsApp messages.
+whatsapp_port = 8082
+whatsapp_verify_token = "my_verify_token"          # Choose any secret string
+whatsapp_access_token = "EAAG..."                  # Meta Graph API token
+whatsapp_phone_number_id = "123456789"             # WhatsApp phone number ID
+# whatsapp_app_secret = "abc123"                   # Optional: verify request signatures
+
+[family_bot]
+# openai_api_key = "sk-..."    # Optional: falls back to OPENAI_API_KEY env var
+model = "gpt-4o-mini"
+system_prompt = "You are a helpful family assistant. You help organise family matters such as schedules, tasks, shopping lists, and family communications."

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "family-bot"
+version = "0.1.0"
+description = "Family organiser chatbot powered by OpenAI, served via WhatsApp through zoozl"
+requires-python = ">=3.11"
+dependencies = [
+    "zoozl",
+    "openai",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
