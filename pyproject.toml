@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "family-bot"
@@ -11,6 +11,9 @@ dependencies = [
     "zoozl",
     "openai-agents>=0.6,<0.7",
 ]
+
+[tool.setuptools]
+py-modules = ["family_bot"]
 
 [project.optional-dependencies]
 dev = [
