@@ -23,7 +23,7 @@ class FamilyAssistant(Interface):
     maintains conversation history per user session.
     """
 
-    aliases = {"greet", "help", "cancel"}
+    aliases = {"greet", "help"}
 
     def load(self, root):
         """Load configuration and initialise the OpenAI async client.

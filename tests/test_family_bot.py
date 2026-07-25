@@ -48,10 +48,15 @@ class TestFamilyAssistantLoad(IsolatedAsyncioTestCase):
         self.assertEqual(assistant._system_prompt, "Custom prompt")
 
     def test_aliases(self):
-        """FamilyAssistant exposes the three required aliases."""
+        """FamilyAssistant handles ordinary messages via greet/help.
+
+        It must NOT claim the ``cancel`` alias: zoozl invokes the cancel
+        handler as a pre-check on every turn, so claiming it would run the
+        OpenAI consume twice and send a duplicate reply per message.
+        """
         self.assertIn("greet", family_bot.FamilyAssistant.aliases)
         self.assertIn("help", family_bot.FamilyAssistant.aliases)
-        self.assertIn("cancel", family_bot.FamilyAssistant.aliases)
+        self.assertNotIn("cancel", family_bot.FamilyAssistant.aliases)
 
 
 class TestFamilyAssistantConsume(IsolatedAsyncioTestCase):
