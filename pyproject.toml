@@ -9,7 +9,7 @@ description = "Family organiser chatbot powered by OpenAI, served via WhatsApp t
 requires-python = ">=3.11"
 dependencies = [
     "zoozl",
-    "openai",
+    "openai-agents>=0.6,<0.7",
 ]
 
 [tool.setuptools]

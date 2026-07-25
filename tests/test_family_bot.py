@@ -1,7 +1,7 @@
-"""Tests for the family_bot plugin."""
+"""Tests for the family_bot plugin (OpenAI Agents SDK)."""
 
-import sys
 import os
+import sys
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +9,38 @@ from unittest.mock import AsyncMock, MagicMock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import family_bot
+
+
+class TestWindowedSession(IsolatedAsyncioTestCase):
+    """Tests for the bounded sliding-window session."""
+
+    async def test_trims_forward_to_first_user_turn(self):
+        """Leading non-user items are dropped so the window starts on a user turn."""
+        raw = [
+            {"role": "assistant", "content": "earlier reply"},
+            {"role": "user", "content": "u1"},
+            {"role": "assistant", "content": "a1"},
+        ]
+        with patch.object(family_bot.SQLiteSession, "__init__", return_value=None), \
+             patch.object(
+                 family_bot.SQLiteSession,
+                 "get_items",
+                 new=AsyncMock(return_value=list(raw)),
+             ):
+            session = family_bot.WindowedSession("wa-1", "db", window_size=5)
+            items = await session.get_items()
+
+        self.assertEqual([i["role"] for i in items], ["user", "assistant"])
+
+    async def test_uses_window_size_as_default_limit(self):
+        """With no explicit limit, the configured window size bounds the replay."""
+        base_get = AsyncMock(return_value=[])
+        with patch.object(family_bot.SQLiteSession, "__init__", return_value=None), \
+             patch.object(family_bot.SQLiteSession, "get_items", new=base_get):
+            session = family_bot.WindowedSession("wa-1", "db", window_size=7)
+            await session.get_items()
+
+        base_get.assert_awaited_once_with(limit=7)
 
 
 class TestFamilyAssistantLoad(IsolatedAsyncioTestCase):
@@ -20,39 +52,61 @@ class TestFamilyAssistantLoad(IsolatedAsyncioTestCase):
         root.conf = conf or {}
         return root
 
-    @patch("family_bot.openai.AsyncOpenAI")
-    def test_load_defaults(self, mock_openai_cls):
-        """Plugin loads with default settings when no config section present."""
-        assistant = family_bot.FamilyAssistant()
-        assistant.load(self._make_root())
+    @patch("family_bot.Agent")
+    @patch("family_bot.set_default_openai_key")
+    def test_load_defaults(self, mock_set_key, mock_agent):
+        """Plugin loads with defaults when no config section is present."""
+        with patch.dict(os.environ, {}, clear=True):
+            assistant = family_bot.FamilyAssistant()
+            assistant.load(self._make_root())
 
-        mock_openai_cls.assert_called_once_with(api_key=None)
+        mock_set_key.assert_not_called()  # no key in conf or environment
         self.assertEqual(assistant._model, "gpt-4o-mini")
         self.assertIn("family assistant", assistant._system_prompt)
+        self.assertEqual(assistant._session_db, "family_bot_sessions.db")
+        self.assertEqual(assistant._history_window, 10)
+        kwargs = mock_agent.call_args.kwargs
+        self.assertEqual(kwargs["instructions"], assistant._system_prompt)
+        self.assertEqual(kwargs["model"], "gpt-4o-mini")
 
-    @patch("family_bot.openai.AsyncOpenAI")
-    def test_load_custom_config(self, mock_openai_cls):
-        """Plugin picks up custom model and system_prompt from config."""
+    @patch("family_bot.Agent")
+    @patch("family_bot.set_default_openai_key")
+    def test_load_custom_config(self, mock_set_key, mock_agent):
+        """Plugin picks up custom settings from the config section."""
         conf = {
+            "database": "/tmp/custom.db",
             "family_bot": {
                 "openai_api_key": "sk-test",
                 "model": "gpt-4o",
                 "system_prompt": "Custom prompt",
+                "history_window": 4,
             }
         }
         assistant = family_bot.FamilyAssistant()
         assistant.load(self._make_root(conf))
 
-        mock_openai_cls.assert_called_once_with(api_key="sk-test")
+        mock_set_key.assert_called_once_with("sk-test")
         self.assertEqual(assistant._model, "gpt-4o")
         self.assertEqual(assistant._system_prompt, "Custom prompt")
+        self.assertEqual(assistant._session_db, "/tmp/custom.db")
+        self.assertEqual(assistant._history_window, 4)
+
+    @patch("family_bot.Agent")
+    @patch("family_bot.set_default_openai_key")
+    def test_load_falls_back_to_env_key(self, mock_set_key, mock_agent):
+        """When no key is in config, the OPENAI_API_KEY environment var is used."""
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-env"}, clear=True):
+            assistant = family_bot.FamilyAssistant()
+            assistant.load(self._make_root())
+
+        mock_set_key.assert_called_once_with("sk-env")
 
     def test_aliases(self):
         """FamilyAssistant handles ordinary messages via greet/help.
 
         It must NOT claim the ``cancel`` alias: zoozl invokes the cancel
         handler as a pre-check on every turn, so claiming it would run the
-        OpenAI consume twice and send a duplicate reply per message.
+        agent twice and send a duplicate reply per message.
         """
         self.assertIn("greet", family_bot.FamilyAssistant.aliases)
         self.assertIn("help", family_bot.FamilyAssistant.aliases)
@@ -63,86 +117,56 @@ class TestFamilyAssistantConsume(IsolatedAsyncioTestCase):
     """Tests for the FamilyAssistant.consume method."""
 
     def _make_assistant(self):
-        """Return a loaded FamilyAssistant with a mocked OpenAI client."""
+        """Return a loaded FamilyAssistant with a stubbed agent."""
         assistant = family_bot.FamilyAssistant()
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = "OpenAI reply"
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
-        assistant._client = mock_client
-        assistant._model = "gpt-4o-mini"
-        assistant._system_prompt = "You are helpful."
-        return assistant, mock_client
+        assistant._agent = MagicMock()
+        assistant._session_db = "family_bot_sessions.db"
+        assistant._history_window = 10
+        return assistant
 
     def _make_package(self, user_text="Hello"):
         """Return a minimal mock Package."""
         package = MagicMock()
         package.last_message_text = user_text
-        package.conversation.data = {}
+        package.talker = "wa-123"
         package.callback = MagicMock()
         return package
 
-    async def test_sends_reply_to_callback(self):
-        """consume() passes the OpenAI reply to package.callback."""
-        assistant, _ = self._make_assistant()
+    async def test_sends_agent_reply_to_callback(self):
+        """consume() passes the agent's final output to package.callback."""
+        assistant = self._make_assistant()
+        package = self._make_package("Hello")
+        run_result = MagicMock(final_output="Agent reply")
+
+        with patch("family_bot.WindowedSession") as mock_session, patch(
+            "family_bot.Runner.run", new=AsyncMock(return_value=run_result)
+        ) as mock_run:
+            await assistant.consume(package)
+
+        mock_session.assert_called_once_with("wa-123", "family_bot_sessions.db", 10)
+        mock_run.assert_awaited_once()
+        package.callback.assert_called_once_with("Agent reply")
+
+    async def test_empty_message_sends_greeting_without_running_agent(self):
+        """An empty message (initial connect) greets without invoking the agent."""
+        assistant = self._make_assistant()
+        package = self._make_package("")
+
+        with patch("family_bot.Runner.run", new=AsyncMock()) as mock_run:
+            await assistant.consume(package)
+
+        mock_run.assert_not_called()
+        package.callback.assert_called_once_with(family_bot.GREETING)
+
+    async def test_agent_error_returns_fallback_message(self):
+        """When the agent run fails a friendly fallback is returned."""
+        assistant = self._make_assistant()
         package = self._make_package("Hello")
 
-        await assistant.consume(package)
-
-        package.callback.assert_called_once_with("OpenAI reply")
-
-    async def test_history_built_correctly(self):
-        """User and assistant messages are appended to conversation history."""
-        assistant, mock_client = self._make_assistant()
-        package = self._make_package("What is 2+2?")
-
-        await assistant.consume(package)
-
-        history = package.conversation.data["history"]
-        self.assertEqual(len(history), 2)
-        self.assertEqual(history[0], {"role": "user", "content": "What is 2+2?"})
-        self.assertEqual(history[1], {"role": "assistant", "content": "OpenAI reply"})
-
-    async def test_system_prompt_included(self):
-        """System prompt is prepended to the messages sent to OpenAI."""
-        assistant, mock_client = self._make_assistant()
-        package = self._make_package("Hi")
-
-        await assistant.consume(package)
-
-        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
-        messages = call_kwargs["messages"]
-        self.assertEqual(messages[0], {"role": "system", "content": "You are helpful."})
-
-    async def test_history_persists_across_turns(self):
-        """Conversation history grows with each call."""
-        assistant, mock_client = self._make_assistant()
-        package = self._make_package("First message")
-
-        await assistant.consume(package)
-
-        # Simulate a second turn
-        package.last_message_text = "Second message"
-        await assistant.consume(package)
-
-        history = package.conversation.data["history"]
-        self.assertEqual(len(history), 4)
-        self.assertEqual(history[0]["role"], "user")
-        self.assertEqual(history[1]["role"], "assistant")
-        self.assertEqual(history[2]["role"], "user")
-        self.assertEqual(history[3]["role"], "assistant")
-
-    async def test_openai_error_returns_fallback_message(self):
-        """When OpenAI raises an error a friendly fallback is returned."""
-        import openai as openai_mod
-
-        assistant, mock_client = self._make_assistant()
-        mock_client.chat.completions.create.side_effect = openai_mod.OpenAIError(
-            "network error"
-        )
-        package = self._make_package("Hello")
-
-        await assistant.consume(package)
+        with patch("family_bot.WindowedSession"), patch(
+            "family_bot.Runner.run", new=AsyncMock(side_effect=RuntimeError("boom"))
+        ):
+            await assistant.consume(package)
 
         text = package.callback.call_args.args[0]
         self.assertIn("unable to respond", text)
