@@ -74,11 +74,11 @@ class TestFamilyAssistantLoad(IsolatedAsyncioTestCase):
     def test_load_custom_config(self, mock_set_key, mock_agent):
         """Plugin picks up custom settings from the config section."""
         conf = {
+            "database": "/tmp/custom.db",
             "family_bot": {
                 "openai_api_key": "sk-test",
                 "model": "gpt-4o",
                 "system_prompt": "Custom prompt",
-                "session_database": "/tmp/custom.db",
                 "history_window": 4,
             }
         }

@@ -33,7 +33,7 @@ Copy `family-bot.toml` and fill in your credentials:
 | `[family_bot].openai_api_key` | *(optional)* OpenAI API key – defaults to `OPENAI_API_KEY` env var |
 | `[family_bot].model` | OpenAI model to use (default `gpt-4o-mini`) |
 | `[family_bot].system_prompt` | Custom system prompt (the agent's instructions) |
-| `[family_bot].session_database` | SQLite file for persisted per-user history (default `family_bot_sessions.db`) |
+| `database` | SQLite database used for persisted conversation/session history (default `family_bot_sessions.db`) |
 | `[family_bot].history_window` | Max recent items replayed to the model per turn (default `10`) |
 
 You can also pass `openai_api_key`, `whatsapp_access_token`, etc. via environment

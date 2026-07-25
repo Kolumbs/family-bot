@@ -28,8 +28,7 @@ whatsapp_phone_number_id = "123456789"             # WhatsApp phone number ID
 # openai_api_key = "sk-..."    # Optional: falls back to OPENAI_API_KEY env var
 model = "gpt-4o-mini"
 system_prompt = "You are a helpful family assistant. You help organise family matters such as schedules, tasks, shopping lists, and family communications."
-# Conversation history is persisted per user (wa_id) in this SQLite file and
-# replayed to the model through a bounded sliding window so the prompt never
-# grows without limit.
-session_database = "family_bot_sessions.db"   # Path to the SQLite session store
+# Conversation history is persisted per user (wa_id) in the server database
+# and replayed to the model through a bounded sliding window so the prompt
+# never grows without limit.
 history_window = 10                            # Max recent items replayed per turn

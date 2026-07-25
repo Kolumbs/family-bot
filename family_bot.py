@@ -83,7 +83,7 @@ class FamilyAssistant(Interface):
             set_default_openai_key(api_key)
         self._model = conf.get("model", "gpt-4o-mini")
         self._system_prompt = conf.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
-        self._session_db = conf.get("session_database", "family_bot_sessions.db")
+        self._session_db = root.conf.get("database", "family_bot_sessions.db")
         self._history_window = conf.get("history_window", 10)
         self._agent = Agent(
             name="Family assistant",
